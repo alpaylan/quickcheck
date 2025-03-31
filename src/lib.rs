@@ -20,7 +20,7 @@ semver compatible releases.
 */
 
 pub use crate::arbitrary::{empty_shrinker, single_shrinker, Arbitrary, Gen};
-pub use crate::tester::{quickcheck, QuickCheck, TestResult, Testable};
+pub use crate::tester::{quickcheck, par_quickcheck, QuickCheck, TestResult, Testable};
 
 /// A macro for writing quickcheck tests.
 ///

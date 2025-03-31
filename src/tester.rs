@@ -2,6 +2,12 @@ use std::cmp;
 use std::env;
 use std::fmt::Debug;
 use std::panic;
+use std::sync::atomic::AtomicBool;
+use std::sync::atomic::AtomicU64;
+use std::sync::atomic::Ordering;
+use std::sync::Arc;
+
+use log::debug;
 
 use crate::{
     tester::Status::{Discard, Fail, Pass},
@@ -139,6 +145,89 @@ impl QuickCheck {
         Ok(n_tests_passed)
     }
 
+    pub fn par_quicktest<A>(&mut self, f: A)
+    where
+        A: Testable + Clone + Sync + Send,
+    {
+        let n_tests_passed = Arc::new(AtomicU64::new(0));
+        let n_tests_discarded = Arc::new(AtomicU64::new(0));
+        let finished_testing = Arc::new(AtomicBool::new(false));
+
+        let mut threads = Vec::new();
+        for _ in 0..4 {
+            let f = f.clone();
+            let mut rng = self.rng.split_self();
+
+            let n_tests_passed = Arc::clone(&n_tests_passed);
+            let n_tests_discarded = Arc::clone(&n_tests_discarded);
+            let finished_testing = Arc::clone(&finished_testing);
+            let tests = self.tests;
+
+            let runner = move || {
+                while finished_testing.load(Ordering::Relaxed) == false {
+                    let n_tests_passed_ =
+                        n_tests_passed.load(Ordering::Relaxed);
+                    let n_tests_discarded_ =
+                        n_tests_discarded.load(Ordering::Relaxed);
+
+                    if n_tests_passed_ + n_tests_discarded_ >= tests {
+                        finished_testing.store(true, Ordering::Relaxed);
+                        break;
+                    }
+
+                    match f.result(&mut rng) {
+                        TestResult { status: Pass, .. } => {
+                            n_tests_passed.fetch_add(1, Ordering::Relaxed);
+                        }
+                        TestResult { status: Discard, .. } => {
+                            n_tests_discarded.fetch_add(1, Ordering::Relaxed);
+                        }
+                        r @ TestResult { status: Fail, .. } => {
+                            debug!(
+                                "failed at test {}",
+                                n_tests_passed_.saturating_add(n_tests_discarded_)
+                            );
+                            finished_testing.store(true, Ordering::Relaxed);    
+                            return Err(r)
+                        },
+                    }
+                }
+                debug!("stopped testing at test {}", n_tests_passed.load(Ordering::Relaxed));
+                Ok(())
+            };
+
+            threads.push(std::thread::spawn(runner));
+        }
+
+        for thread in threads {
+            match thread.join() {
+                Ok(Ok(())) => {}
+                Ok(Err(r)) => {
+                    println!(
+                        "[par_quickcheck] TEST FAILED. Arguments: ({})",
+                        r.arguments.unwrap_or_default().join(", ")
+                    );
+                }
+                Err(e) => {
+                    panic!("Thread panicked: {:?}", e);
+                }
+            }
+        }
+        let n_tests_passed = n_tests_passed.load(Ordering::Relaxed);
+        let n_tests_discarded = n_tests_discarded.load(Ordering::Relaxed);
+        if n_tests_passed >= self.min_tests_passed {
+            info!(
+                "(Passed {} QuickCheck tests, {} discarded.)",
+                n_tests_passed, n_tests_discarded
+            );
+        } else {
+            panic!(
+                "(Unable to generate enough tests, {} not discarded.)",
+                n_tests_passed
+            );
+        }
+    }
+
     /// Tests a property and calls `panic!` on failure.
     ///
     /// The `panic!` message will include a (hopefully) minimal witness of
@@ -193,6 +282,10 @@ impl QuickCheck {
 /// This is an alias for `QuickCheck::new().quickcheck(f)`.
 pub fn quickcheck<A: Testable>(f: A) {
     QuickCheck::new().quickcheck(f)
+}
+
+pub fn par_quickcheck<A: Testable + Clone + Send + Sync>(f: A) {
+    QuickCheck::new().par_quicktest(f)
 }
 
 /// Describes the status of a single instance of a test.
