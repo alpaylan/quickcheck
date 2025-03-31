@@ -62,19 +62,28 @@ impl Gen {
         slice.choose(&mut self.rng)
     }
 
-    fn random<T>(&mut self) -> T
+    pub fn random<T>(&mut self) -> T
     where
         rand::distr::StandardUniform: rand::distr::Distribution<T>,
     {
         self.rng.random()
     }
 
-    fn random_range<T, R>(&mut self, range: R) -> T
+    pub fn random_range<T, R>(&mut self, range: R) -> T
     where
         T: rand::distr::uniform::SampleUniform,
         R: rand::distr::uniform::SampleRange<T>,
     {
         self.rng.random_range(range)
+    }
+
+    // This method is very probably not a good idea. We should use actual RNG splitting.
+    pub(crate) fn split_self(&mut self) -> Gen {
+        let r1 = self.rng.next_u64();
+        let r2 = self.rng.next_u64();
+        self.rng = rand::rngs::SmallRng::seed_from_u64(r1);
+        let rng = rand::rngs::SmallRng::seed_from_u64(r2);
+        Gen { rng, size: self.size }
     }
 }
 
