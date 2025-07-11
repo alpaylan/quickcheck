@@ -20,6 +20,7 @@ members = ["quickcheck_macros"]
 default = ["regex", "use_logging"]
 use_logging = ["log", "env_logger"]
 regex = ["env_logger/regex"]
+etna = ["serde", "erased-serde", "serde_sexpr", "serde_json"]
 
 [lib]
 name = "quickcheck"
@@ -28,3 +29,9 @@ name = "quickcheck"
 env_logger = { version = "0.11", default-features = false, optional = true }
 log = { version = "0.4", optional = true }
 rand = { version = "0.9", default-features = false, features = ["os_rng", "small_rng"] }
+
+# etna requirements
+serde = { version = "1.0.219", features = ["derive"], optional = true }
+erased-serde = {version = "0.4.6", optional = true }
+serde_json = {version = "1.0.140", optional = true }
+serde_sexpr = { version = "0.1.0", optional = true }

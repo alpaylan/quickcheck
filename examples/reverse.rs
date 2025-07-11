@@ -2,7 +2,10 @@ use quickcheck::quickcheck;
 
 fn reverse<T: Clone>(xs: &[T]) -> Vec<T> {
     let mut rev = vec![];
-    for x in xs {
+    if xs.is_empty() {
+        return rev;
+    }
+    for x in xs[1..].iter() {
         rev.insert(0, x.clone());
     }
     rev

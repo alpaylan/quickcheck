@@ -4,6 +4,8 @@ use std::ffi::CString;
 use std::hash::BuildHasherDefault;
 use std::path::PathBuf;
 
+use crate::tester::ResultStatus;
+
 use super::{quickcheck, Gen, QuickCheck, TestResult};
 
 #[test]
@@ -12,11 +14,12 @@ fn prop_oob() {
         let zero: Vec<bool> = vec![];
         zero[0]
     }
-    if let Ok(n) = QuickCheck::new().quicktest(prop as fn() -> bool) {
+    let result = QuickCheck::new().quicktest(prop as fn() -> bool);
+    if let ResultStatus::Finished = result.status {
         panic!(
             "prop_oob should fail with a runtime error \
             but instead it passed {} tests.",
-            n
+            result.n_tests_passed
         );
     }
 }
