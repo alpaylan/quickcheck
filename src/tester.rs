@@ -356,20 +356,14 @@ impl QuickCheck {
         f: A,
     ) -> Vec<(std::time::Duration, String)>
     where
-        A: Testable,
+        A: Sample,
     {
         let t0 = std::time::Instant::now();
         let mut results = vec![];
         let mut n_tests_passed = 0;
         while n_tests_passed < self.tests && t0.elapsed() < self.max_time {
-            let r = f.result(&mut self.rng);
-            results.push((
-                r.generation_time,
-                match r.arguments {
-                    None => "()".to_owned(),
-                    Some(ref args) => format!("({})", args.join(" ")),
-                },
-            ));
+            let (generation_time, args) = f.sample(&mut self.rng);
+            results.push((generation_time, format!("({})", args.join(" "))));
             n_tests_passed += 1;
         }
 
@@ -607,6 +601,51 @@ fn debug_reprs(args: &[&dyn Debug]) -> Vec<String> {
 }
 
 #[cfg(feature = "etna")]
+pub trait Sample {
+    /// For an Function `fn(T1, T2) -> T`, this method samples
+    /// a pair of arguments `(T1, T2)` and returns the elapsed time
+    /// it took to sample them, along with the function itself.
+    fn sample(&self, g: &mut Gen) -> (Duration, Vec<String>);
+}
+
+#[cfg(feature = "etna")]
+macro_rules! sampling_fn {
+    ($($name: ident),*) => {
+
+impl<T,
+     $($name: Arbitrary + Serialize),*> Sample for fn($($name),*) -> T {
+    #[allow(non_snake_case)]
+    fn sample(&self, g: &mut Gen) -> (Duration, Vec<String>) {
+        let t0 = std::time::Instant::now();
+        let a: ($($name,)*) = Arbitrary::arbitrary(g);
+        let generation_time = t0.elapsed();
+
+        let ($(ref $name,)*) : ($($name,)*) = a;
+        let arguments = debug_reprs(&[$($name),*]);
+        (generation_time, arguments)
+    }
+}}}
+
+#[cfg(feature = "etna")]
+sampling_fn!();
+#[cfg(feature = "etna")]
+sampling_fn!(A);
+#[cfg(feature = "etna")]
+sampling_fn!(A, B);
+#[cfg(feature = "etna")]
+sampling_fn!(A, B, C);
+#[cfg(feature = "etna")]
+sampling_fn!(A, B, C, D);
+#[cfg(feature = "etna")]
+sampling_fn!(A, B, C, D, E);
+#[cfg(feature = "etna")]
+sampling_fn!(A, B, C, D, E, F);
+#[cfg(feature = "etna")]
+sampling_fn!(A, B, C, D, E, F, G);
+#[cfg(feature = "etna")]
+sampling_fn!(A, B, C, D, E, F, G, H);
+
+#[cfg(feature = "etna")]
 macro_rules! testable_fn {
     ($($name: ident),*) => {
 
@@ -648,8 +687,11 @@ impl<T: Testable,
 
         let ( $($name,)* ) = a.clone();
         let t0 = std::time::Instant::now();
-        let r = safe(move || {self_($($name),*)}).result(g);
+        let mut r = safe(move || {self_($($name),*)}).result(g);
         let execution_time = t0.elapsed();
+
+        let ($(ref $name,)*) : ($($name,)*) = a;
+        r.arguments = Some(debug_reprs(&[$($name),*]));
 
         match r.status {
             Pass|Discard => r,
