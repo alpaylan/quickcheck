@@ -179,14 +179,7 @@ impl QuickCheckResult {
         let message = serde_json::to_string(&result)
             .unwrap_or_else(|_| "Failed to serialize result".to_string());
 
-        match self.status {
-            ResultStatus::Finished => info!("{message}"),
-            ResultStatus::GaveUp
-            | ResultStatus::TimedOut
-            | ResultStatus::Failed { .. } => {
-                panic!("{message}");
-            }
-        }
+        println!("{message}");
     }
 }
 
