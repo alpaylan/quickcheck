@@ -235,9 +235,10 @@ fn regression_issue_107_hang() {
     quickcheck(prop as fn(_) -> bool);
 }
 
+#[cfg(not(feature = "etna"))]
 #[test]
 #[should_panic(
-    expected = "(Unable to generate enough tests, 0 not discarded.)"
+    expected = "(Gave up after 0 successful tests and 70 discarded.)"
 )]
 fn all_tests_discarded_min_tests_passed_set() {
     fn prop_discarded(_: u8) -> TestResult {
@@ -245,11 +246,30 @@ fn all_tests_discarded_min_tests_passed_set() {
     }
 
     QuickCheck::new()
-        .tests(16)
-        .min_tests_passed(8)
+        .max_tests(100)
+        .tests(1)
+        .min_tests_passed(30)
         .quickcheck(prop_discarded as fn(u8) -> TestResult);
 }
 
+#[cfg(feature = "etna")]
+#[test]
+#[should_panic(
+    expected = r#"{"counterexample":null,"discarded":70,"error":null,"execution_time":"0ns","generation_time":"0ns","passed":0,"shrinking_time":"0ns","status":"GaveUp","total_time":"#
+)]
+fn all_tests_discarded_min_tests_passed_set() {
+    fn prop_discarded(_: u8) -> TestResult {
+        TestResult::discard()
+    }
+
+    QuickCheck::new()
+        .max_tests(100)
+        .tests(1)
+        .min_tests_passed(30)
+        .quickcheck(prop_discarded as fn(u8) -> TestResult);
+}
+
+#[cfg(not(feature = "etna"))]
 #[test]
 fn all_tests_discarded_min_tests_passed_missing() {
     fn prop_discarded(_: u8) -> TestResult {

@@ -140,17 +140,16 @@ impl QuickCheckResult {
             ResultStatus::TimedOut => {
                 panic!("(Timed out at {} seconds after {} successful tests and {} discarded.)", self.total_time.as_secs(), self.n_tests_passed, self.n_tests_discarded);
             }
-            ResultStatus::Failed { ref arguments, err: _ } => {
-                let args = if arguments.is_empty() {
-                    "No Arguments Provided".to_string()
-                } else {
-                    format!("Arguments: ({})", arguments.join(", "))
-                };
-                panic!("(Failed - {})", args);
+            ResultStatus::Failed { ref arguments, ref err } => {
+                let mut tr = TestResult::from_bool(false);
+                tr.arguments = Some(arguments.clone());
+                tr.err = err.clone();
+                panic!("{}", tr.failed_msg());
             }
         }
     }
     #[cfg(feature = "etna")]
+    // Prints the status of the test result in JSON format.
     pub fn print_status(&self) {
         let result = serde_json::json!({
             "status": match self.status {
@@ -171,6 +170,10 @@ impl QuickCheckResult {
                 }
                 _ => None
             },
+            "error": match self.status {
+                ResultStatus::Failed { err: Some(ref e), .. } => Some(e.clone()),
+                _ => None
+            }
         });
 
         let message = serde_json::to_string(&result)
@@ -277,42 +280,6 @@ impl QuickCheck {
 
         let start = std::time::Instant::now();
         for _ in 0..self.max_tests {
-            if n_tests_passed >= self.tests {
-                return QuickCheckResult {
-                    n_tests_passed,
-                    n_tests_discarded,
-                    status: ResultStatus::Finished,
-                    total_time: start.elapsed(),
-                    generation_time: total_generation_time,
-                    execution_time: total_execution_time,
-                    shrinking_time: total_shrinking_time,
-                };
-            }
-
-            if n_tests_discarded >= self.max_tests - self.tests {
-                return QuickCheckResult {
-                    n_tests_passed,
-                    n_tests_discarded,
-                    status: ResultStatus::GaveUp,
-                    total_time: start.elapsed(),
-                    generation_time: total_generation_time,
-                    execution_time: total_execution_time,
-                    shrinking_time: total_shrinking_time,
-                };
-            }
-
-            if start.elapsed() >= self.max_time {
-                return QuickCheckResult {
-                    n_tests_passed,
-                    n_tests_discarded,
-                    status: ResultStatus::TimedOut,
-                    total_time: start.elapsed(),
-                    generation_time: total_generation_time,
-                    execution_time: total_execution_time,
-                    shrinking_time: total_shrinking_time,
-                };
-            }
-
             let result = f.result(&mut self.rng);
             total_generation_time += result.generation_time;
             total_execution_time += result.execution_time;
@@ -336,9 +303,51 @@ impl QuickCheck {
                     }
                 }
             }
+
+            if start.elapsed() >= self.max_time {
+                return QuickCheckResult {
+                    n_tests_passed,
+                    n_tests_discarded,
+                    status: ResultStatus::TimedOut,
+                    total_time: start.elapsed(),
+                    generation_time: total_generation_time,
+                    execution_time: total_execution_time,
+                    shrinking_time: total_shrinking_time,
+                };
+            }
+
+            if n_tests_passed >= self.tests {
+                break;
+            }
+
+            if n_tests_discarded >= self.max_tests - self.min_tests_passed {
+                // If min_tests_passed is set to 0, discards do not panic, so we fallback to
+                // the default finished status.
+                if self.min_tests_passed == 0 {
+                    break;
+                }
+
+                return QuickCheckResult {
+                    n_tests_passed,
+                    n_tests_discarded,
+                    status: ResultStatus::GaveUp,
+                    total_time: start.elapsed(),
+                    generation_time: total_generation_time,
+                    execution_time: total_execution_time,
+                    shrinking_time: total_shrinking_time,
+                };
+            }
         }
 
-        unreachable!(); // We should never reach here because we always return before the loop ends.
+        QuickCheckResult {
+            n_tests_passed,
+            n_tests_discarded,
+            status: ResultStatus::Finished,
+            total_time: start.elapsed(),
+            generation_time: total_generation_time,
+            execution_time: total_execution_time,
+            shrinking_time: total_shrinking_time,
+        }
     }
 
     #[cfg(feature = "etna")]
@@ -747,7 +756,10 @@ mod test {
         let failing_case = QuickCheck::new()
             .quicktest(thetest as fn(vals: Vec<bool>) -> bool)
             .unwrap_err();
+        #[cfg(not(feature = "etna"))]
         let expected_argument = format!("{:?}", [true, true]);
+        #[cfg(feature = "etna")]
+        let expected_argument = r#"(true true)"#.to_owned();
         assert_eq!(failing_case.arguments, Some(vec![expected_argument]));
     }
 
