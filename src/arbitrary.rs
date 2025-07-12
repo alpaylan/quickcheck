@@ -876,6 +876,10 @@ macro_rules! signed_shrinker {
             impl Iterator for SignedShrinker {
                 type Item = $ty;
                 fn next(&mut self) -> Option<$ty> {
+                    if self.x == <$ty>::MIN && self.i == 0 {
+                        return None;
+                    }
+
                     if self.x == <$ty>::MIN
                         || (self.x - self.i).abs() < self.x.abs()
                     {
@@ -1373,6 +1377,7 @@ mod test {
         eq(5i8, vec![0, 3, 4]);
         eq(-5i8, vec![5, 0, -3, -4]);
         eq(0i8, vec![]);
+        eq(-128i8, vec![-127, -112, -64, -120, -124, -96, 0, -126]);
     }
 
     #[test]
@@ -1380,6 +1385,7 @@ mod test {
         eq(5i16, vec![0, 3, 4]);
         eq(-5i16, vec![5, 0, -3, -4]);
         eq(0i16, vec![]);
+        eq(-32768i16, vec![-16384, -32760, -32767, -24576, 0, -32764, -32736, -32512, -28672, -30720, -31744, -32752, -32256, -32704, -32766, -32640]);
     }
 
     #[test]
