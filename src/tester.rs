@@ -484,6 +484,18 @@ impl TestResult {
         }
     }
 
+    /// Converts an `Option<bool>` to a `TestResult`. A `Some(true)` value
+    /// indicates that the test has passed, a `Some(false)` value indicates
+    /// that the test has failed, and a `None` value indicates that the test
+    /// has been discarded.
+    pub fn from_option_bool(b: Option<bool>) -> TestResult {
+        match b {
+            Some(true) => TestResult::from_bool(true),
+            Some(false) => TestResult::from_bool(false),
+            None => TestResult::discard(),
+        }
+    }
+
     /// Tests if a "procedure" fails when executed. The test passes only if
     /// `f` generates a task failure during its execution.
     pub fn must_fail<T, F>(f: F) -> TestResult
@@ -558,6 +570,12 @@ pub trait Testable: 'static {
 impl Testable for bool {
     fn result(&self, _: &mut Gen) -> TestResult {
         TestResult::from_bool(*self)
+    }
+}
+
+impl Testable for Option<bool> {
+    fn result(&self, _: &mut Gen) -> TestResult {
+        TestResult::from_option_bool(*self)
     }
 }
 
