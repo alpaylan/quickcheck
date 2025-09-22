@@ -1,13 +1,10 @@
 use std::cmp;
 use std::env;
 use std::fmt::Debug;
+#[cfg(feature = "etna")]
+use std::fmt::Display;
 use std::panic;
 use std::time::Duration;
-
-#[cfg(feature = "etna")]
-use erased_serde::Serialize;
-#[cfg(feature = "etna")]
-use serde_sexpr;
 
 use crate::{
     tester::Status::{Discard, Fail, Pass},
@@ -82,7 +79,9 @@ pub enum ResultStatus {
     /// Exceeded maximum time limit.
     TimedOut,
     /// The test failed with a counterexample.
-    Failed { arguments: Vec<String>, err: Option<String> },
+    Failed { arguments: Vec<String> },
+    /// The test was aborted due to an internal error.
+    Aborted { err: Option<String> },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -110,10 +109,10 @@ impl QuickCheckResult {
 
     pub fn unwrap_err(self) -> TestResult {
         match self.status {
-            ResultStatus::Failed { arguments, err } => TestResult {
+            ResultStatus::Failed { arguments } => TestResult {
                 status: Fail,
                 arguments: Some(arguments),
-                err,
+                err: None,
                 generation_time: self.generation_time,
                 execution_time: self.execution_time,
                 shrinking_time: self.shrinking_time,
@@ -140,9 +139,13 @@ impl QuickCheckResult {
             ResultStatus::TimedOut => {
                 panic!("(Timed out at {} seconds after {} successful tests and {} discarded.)", self.total_time.as_secs(), self.n_tests_passed, self.n_tests_discarded);
             }
-            ResultStatus::Failed { ref arguments, ref err } => {
+            ResultStatus::Failed { ref arguments } => {
                 let mut tr = TestResult::from_bool(false);
                 tr.arguments = Some(arguments.clone());
+                panic!("{}", tr.failed_msg());
+            }
+            ResultStatus::Aborted { ref err } => {
+                let mut tr = TestResult::from_bool(false);
                 tr.err = err.clone();
                 panic!("{}", tr.failed_msg());
             }
@@ -153,10 +156,11 @@ impl QuickCheckResult {
     pub fn print_status(&self) {
         let result = serde_json::json!({
             "status": match self.status {
-                ResultStatus::Finished => "Finished",
-                ResultStatus::GaveUp => "GaveUp",
-                ResultStatus::TimedOut => "TimedOut",
-                ResultStatus::Failed { .. } => "Failed",
+                ResultStatus::Finished => "finished",
+                ResultStatus::GaveUp => "gave_up",
+                ResultStatus::TimedOut => "timed_out",
+                ResultStatus::Failed { .. } => "failed",
+                ResultStatus::Aborted { .. } => "aborted",
             },
             "tests": self.n_tests_passed,
             "discards": self.n_tests_discarded,
@@ -165,13 +169,13 @@ impl QuickCheckResult {
             "execution_time": format!("{}ns", self.execution_time.as_nanos()),
             "shrinking_time": format!("{}ns", self.shrinking_time.as_nanos()),
             "counterexample": match self.status {
-                ResultStatus::Failed { ref arguments, err: _ } => {
+                ResultStatus::Failed { ref arguments} => {
                     Some(format!("({})", arguments.join(" ")))
                 }
                 _ => None
             },
             "error": match self.status {
-                ResultStatus::Failed { err: Some(ref e), .. } => Some(e.clone()),
+                ResultStatus::Aborted { ref err } => Some(err.clone()),
                 _ => None
             }
         });
@@ -179,7 +183,7 @@ impl QuickCheckResult {
         let message = serde_json::to_string(&result)
             .unwrap_or_else(|_| "Failed to serialize result".to_string());
 
-        println!("[|{message}|]");
+        println!("{message}");
     }
 }
 
@@ -272,7 +276,8 @@ impl QuickCheck {
         let mut total_shrinking_time = std::time::Duration::default();
 
         let start = std::time::Instant::now();
-        for _ in 0..self.max_tests {
+        for i in 0..self.max_tests {
+            self.rng.set_size((i as f64).log2() as usize);
             let result = f.result(&mut self.rng);
             total_generation_time += result.generation_time;
             total_execution_time += result.execution_time;
@@ -281,20 +286,35 @@ impl QuickCheck {
             match result {
                 TestResult { status: Pass, .. } => n_tests_passed += 1,
                 TestResult { status: Discard, .. } => n_tests_discarded += 1,
-                r @ TestResult { status: Fail, .. } => {
+                TestResult {
+                    status: Fail,
+                    arguments: Some(arguments),
+                    ..
+                } => {
                     return QuickCheckResult {
                         n_tests_passed,
                         n_tests_discarded,
-                        status: ResultStatus::Failed {
-                            arguments: r.arguments.unwrap_or_default(),
-                            err: r.err,
-                        },
+                        status: ResultStatus::Failed { arguments },
                         total_time: start.elapsed(),
                         generation_time: total_generation_time,
                         execution_time: total_execution_time,
                         shrinking_time: total_shrinking_time,
                     }
                 }
+                TestResult { status: Fail, err: Some(e), .. } => {
+                    return QuickCheckResult {
+                        n_tests_passed,
+                        n_tests_discarded,
+                        status: ResultStatus::Aborted { err: Some(e) },
+                        total_time: start.elapsed(),
+                        generation_time: total_generation_time,
+                        execution_time: total_execution_time,
+                        shrinking_time: total_shrinking_time,
+                    }
+                }
+                _ => unreachable!(
+                    "err and arguments must not be set at the same time"
+                ),
             }
 
             if start.elapsed() >= self.max_time {
@@ -355,8 +375,14 @@ impl QuickCheck {
         let mut results = vec![];
         let mut n_tests_passed = 0;
         while n_tests_passed < self.tests && t0.elapsed() < self.max_time {
+            self.rng.set_size((n_tests_passed as f64).log2() as usize);
             let (generation_time, args) = f.sample(&mut self.rng);
-            results.push((generation_time, format!("({})", args.join(" "))));
+            let arguments_str = if args.len() == 1 {
+                args[0].clone()
+            } else {
+                format!("({})", args.join(" "))
+            };
+            results.push((generation_time, arguments_str));
             n_tests_passed += 1;
         }
 
@@ -439,6 +465,12 @@ impl TestResult {
     /// Produces a test result that indicates the current test has failed.
     pub fn failed() -> TestResult {
         TestResult::from_bool(false)
+    }
+
+    /// Attaches the arguments that were used to generate this test result.
+    pub fn with_args(mut self, args: Vec<String>) -> TestResult {
+        self.arguments = Some(args);
+        self
     }
 
     /// Produces a test result that indicates failure from a runtime error.
@@ -599,10 +631,8 @@ where
 
 #[cfg(feature = "etna")]
 /// Return a vector of the debug formatting of each item in `args`
-fn debug_reprs(args: &[&dyn Serialize]) -> Vec<String> {
-    args.iter()
-        .map(|x| format!("{}", serde_sexpr::to_string(x).unwrap()))
-        .collect()
+fn debug_reprs(args: &[&dyn Display]) -> Vec<String> {
+    args.iter().map(|x| format!("{}", x.to_string())).collect()
 }
 
 #[cfg(not(feature = "etna"))]
@@ -624,7 +654,7 @@ macro_rules! sampling_fn {
     ($($name: ident),*) => {
 
 impl<T,
-     $($name: Arbitrary + Serialize),*> Sample for fn($($name),*) -> T {
+     $($name: Arbitrary + Display),*> Sample for fn($($name),*) -> T {
     #[allow(non_snake_case)]
     fn sample(&self, g: &mut Gen) -> (Duration, Vec<String>) {
         let t0 = std::time::Instant::now();
@@ -661,10 +691,10 @@ macro_rules! testable_fn {
     ($($name: ident),*) => {
 
 impl<T: Testable,
-     $($name: Arbitrary + Debug + Serialize),*> Testable for fn($($name),*) -> T {
+     $($name: Arbitrary + Debug + Display),*> Testable for fn($($name),*) -> T {
     #[allow(non_snake_case)]
     fn result(&self, g: &mut Gen) -> TestResult {
-        fn shrink_failure<T: Testable, $($name: Arbitrary + Debug + Serialize),*>(
+        fn shrink_failure<T: Testable, $($name: Arbitrary + Debug + Display),*>(
             g: &mut Gen,
             self_: fn($($name),*) -> T,
             a: ($($name,)*),
@@ -802,6 +832,7 @@ mod test {
     use crate::{Gen, QuickCheck};
 
     #[test]
+    #[cfg(not(feature = "etna"))]
     fn shrinking_regression_issue_126() {
         fn thetest(vals: Vec<bool>) -> bool {
             vals.iter().filter(|&v| *v).count() < 2
@@ -809,10 +840,8 @@ mod test {
         let failing_case = QuickCheck::new()
             .quicktest(thetest as fn(vals: Vec<bool>) -> bool)
             .unwrap_err();
-        #[cfg(not(feature = "etna"))]
+
         let expected_argument = format!("{:?}", [true, true]);
-        #[cfg(feature = "etna")]
-        let expected_argument = r#"(true true)"#.to_owned();
         assert_eq!(failing_case.arguments, Some(vec![expected_argument]));
     }
 

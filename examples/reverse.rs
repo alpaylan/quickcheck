@@ -1,3 +1,6 @@
+#![allow(dead_code)]
+#![allow(unused_imports)]
+
 use quickcheck::quickcheck;
 
 fn reverse<T: Clone>(xs: &[T]) -> Vec<T> {
@@ -15,5 +18,6 @@ fn main() {
     fn equality_after_applying_twice(xs: Vec<isize>) -> bool {
         xs == reverse(&reverse(&xs))
     }
+    #[cfg(not(feature = "etna"))]
     quickcheck(equality_after_applying_twice as fn(Vec<isize>) -> bool);
 }

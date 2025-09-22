@@ -1,3 +1,6 @@
+#![allow(dead_code)]
+#![allow(unused_imports)]
+
 // This is a buggy quick sort implementation, QuickCheck will find the bug for
 // you.
 
@@ -40,7 +43,9 @@ fn main() {
     fn keeps_length(xs: Vec<isize>) -> bool {
         xs.len() == sort(&xs).len()
     }
-    quickcheck(keeps_length as fn(Vec<isize>) -> bool);
 
+    #[cfg(not(feature = "etna"))]
+    quickcheck(keeps_length as fn(Vec<isize>) -> bool);
+    #[cfg(not(feature = "etna"))]
     quickcheck(is_sorted as fn(Vec<isize>) -> bool);
 }

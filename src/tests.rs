@@ -25,6 +25,7 @@ fn prop_oob() {
 }
 
 #[test]
+#[cfg(not(feature = "etna"))]
 fn prop_reverse_reverse() {
     fn prop(xs: Vec<usize>) -> bool {
         let rev: Vec<_> = xs.clone().into_iter().rev().collect();
@@ -33,7 +34,7 @@ fn prop_reverse_reverse() {
     }
     quickcheck(prop as fn(Vec<usize>) -> bool);
 }
-
+#[cfg(not(feature = "etna"))]
 quickcheck! {
     fn prop_reverse_reverse_macro(xs: Vec<usize>) -> bool {
         let rev: Vec<_> = xs.clone().into_iter().rev().collect();
@@ -49,6 +50,7 @@ quickcheck! {
 }
 
 #[test]
+#[cfg(not(feature = "etna"))]
 fn reverse_single() {
     fn prop(xs: Vec<usize>) -> TestResult {
         if xs.len() != 1 {
@@ -63,6 +65,7 @@ fn reverse_single() {
 }
 
 #[test]
+#[cfg(not(feature = "etna"))]
 fn reverse_app() {
     fn prop(xs: Vec<usize>, ys: Vec<usize>) -> bool {
         let mut app = xs.clone();
@@ -91,6 +94,7 @@ fn max() {
 }
 
 #[test]
+#[cfg(not(feature = "etna"))]
 fn sort() {
     fn prop(mut xs: Vec<isize>) -> bool {
         xs.sort_unstable();
@@ -228,6 +232,7 @@ fn panic_msg_3() {
 
 #[test]
 #[should_panic]
+#[cfg(not(feature = "etna"))]
 fn regression_issue_107_hang() {
     fn prop(a: Vec<u8>) -> bool {
         a.contains(&1)
@@ -278,7 +283,7 @@ fn all_tests_discarded_min_tests_passed_missing() {
 
     QuickCheck::new().quickcheck(prop_discarded as fn(u8) -> TestResult);
 }
-
+#[cfg(not(feature = "etna"))]
 quickcheck! {
     /// The following is a very simplistic test, which only verifies
     /// that our PathBuf::arbitrary does not panic.  Still, that's

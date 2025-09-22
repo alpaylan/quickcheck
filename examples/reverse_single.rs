@@ -1,3 +1,6 @@
+#![allow(dead_code)]
+#![allow(unused_imports)]
+
 use quickcheck::{quickcheck, TestResult};
 
 fn reverse<T: Clone>(xs: &[T]) -> Vec<T> {
@@ -15,5 +18,7 @@ fn main() {
         }
         TestResult::from_bool(xs == reverse(&xs))
     }
+
+    #[cfg(not(feature = "etna"))]
     quickcheck(prop as fn(Vec<isize>) -> TestResult);
 }

@@ -1,3 +1,6 @@
+#![allow(dead_code)]
+#![allow(unused_imports)]
+
 use std::collections::BTreeSet;
 use std::ops::Bound::{self, *};
 
@@ -51,5 +54,6 @@ fn check_range(set: BTreeSet<i32>, range: RangeAny<i32>) -> TestResult {
 }
 
 fn main() {
+    #[cfg(not(feature = "etna"))]
     quickcheck(check_range as fn(_, _) -> TestResult);
 }

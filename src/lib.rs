@@ -20,7 +20,10 @@ semver compatible releases.
 */
 
 pub use crate::arbitrary::{empty_shrinker, single_shrinker, Arbitrary, Gen};
-pub use crate::tester::{quickcheck, QuickCheck, TestResult, Testable};
+pub use crate::tester::{
+    quickcheck, QuickCheck, QuickCheckResult, ResultStatus, TestResult,
+    Testable,
+};
 
 /// A macro for writing quickcheck tests.
 ///
@@ -45,6 +48,7 @@ pub use crate::tester::{quickcheck, QuickCheck, TestResult, Testable};
 /// # }
 /// ```
 #[macro_export]
+#[cfg(not(feature = "etna"))]
 macro_rules! quickcheck {
     (@as_items $($i:item)*) => ($($i)*);
     {

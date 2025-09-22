@@ -4,6 +4,7 @@ use std::collections::{
 };
 use std::env;
 use std::ffi::{CString, OsString};
+use std::fmt::Debug;
 use std::hash::{BuildHasher, Hash};
 use std::iter::{empty, once};
 use std::net::{
@@ -38,6 +39,14 @@ pub struct Gen {
     size: usize,
 }
 
+impl Debug for Gen {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Gen")
+            .field("size", &self.size)
+            .finish_non_exhaustive()
+    }
+}
+
 impl Gen {
     /// Returns a `Gen` with the given size configuration.
     ///
@@ -55,6 +64,11 @@ impl Gen {
         self.size
     }
 
+    /// Sets the size of this generator.
+    pub(crate) fn set_size(&mut self, size: usize) {
+        self.size = size;
+    }
+
     /// Choose among the possible alternatives in the slice given. If the slice
     /// is empty, then `None` is returned. Otherwise, a non-`None` value is
     /// guaranteed to be returned.
@@ -69,12 +83,50 @@ impl Gen {
         self.rng.random()
     }
 
-    fn random_range<T, R>(&mut self, range: R) -> T
+    pub fn random_range<T, R>(&mut self, range: R) -> T
     where
         T: rand::distr::uniform::SampleUniform,
         R: rand::distr::uniform::SampleRange<T>,
     {
         self.rng.random_range(range)
+    }
+
+    pub fn one_of<T>(
+        &mut self,
+        mut choices: Vec<Box<dyn for<'a> FnOnce(&'a mut Gen) -> T>>,
+    ) -> T {
+        let idx = self.rng.random_range(0..choices.len());
+        let choice = choices.remove(idx); // Now we own the Box<dyn FnOnce>
+        choice(self) // OK: we are consuming the FnOnce
+    }
+
+    pub fn frequency<T>(
+        &mut self,
+        choices: &[(usize, Box<dyn Fn(&mut Gen) -> T>)],
+    ) -> T {
+        let total_weight: usize = choices.iter().map(|(w, _)| w).sum();
+        let mut idx = self.rng.random_range(0..total_weight);
+        for (weight, choice) in choices {
+            if idx < *weight {
+                return choice(self);
+            }
+            idx -= weight;
+        }
+        unreachable!() // Should never happen if weights are correct
+    }
+
+    pub fn backtrack<T>(
+        &mut self,
+        choices: &[(usize, Box<dyn Fn(&mut Gen) -> Option<T>>)],
+    ) -> Option<T> {
+        for (backtrack_fuel, ref choice) in choices {
+            for _ in 0..*backtrack_fuel {
+                if let Some(value) = choice(self) {
+                    return Some(value);
+                }
+            }
+        }
+        None
     }
 }
 
@@ -122,7 +174,7 @@ pub trait Arbitrary: Clone + 'static {
     ///
     /// The iterator returned should be bounded to some reasonable size.
     ///
-    /// It is always correct to return an empty iterator, and indeed, this
+    /// It is always /Users/akeles/Programming/projects/PbtBenchmark/quickcheck/src/arbitrary.rscorrect to return an empty iterator, and indeed, this
     /// is the default implementation. The downside of this approach is that
     /// witnesses to failures in properties will be more inscrutable.
     fn shrink(&self) -> Box<dyn Iterator<Item = Self>> {
@@ -908,7 +960,7 @@ macro_rules! signed_arbitrary {
                 fn arbitrary(g: &mut Gen) -> $ty {
                     match g.random_range(0..10) {
                         0 => *g.choose(signed_problem_values!($ty)).unwrap(),
-                        _ => g.random()
+                        _ => g.random_range(-(g.size() as $ty)..=g.size() as $ty)
                     }
                 }
                 fn shrink(&self) -> Box<dyn Iterator<Item=$ty>> {
@@ -1385,7 +1437,14 @@ mod test {
         eq(5i16, vec![0, 3, 4]);
         eq(-5i16, vec![5, 0, -3, -4]);
         eq(0i16, vec![]);
-        eq(-32768i16, vec![-16384, -32760, -32767, -24576, 0, -32764, -32736, -32512, -28672, -30720, -31744, -32752, -32256, -32704, -32766, -32640]);
+        eq(
+            -32768i16,
+            vec![
+                -16384, -32760, -32767, -24576, 0, -32764, -32736, -32512,
+                -28672, -30720, -31744, -32752, -32256, -32704, -32766,
+                -32640,
+            ],
+        );
     }
 
     #[test]
